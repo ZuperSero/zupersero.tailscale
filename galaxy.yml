@@ -1,0 +1,43 @@
+---
+namespace: zupersero
+
+name: tailscale
+
+version: 1.0.0
+
+readme: README.md
+
+authors:
+  - zupersero
+
+description: |
+  An ansible collection for working and interacting with software in the elastic ecosystem.
+  Here you can find roles and modules for managing Elasticsearch, Kibana, Fleet and more.
+  The collection might not be complete and is under active development.
+  If there is a module or a role for something specific you need, feel free to open an issue or a PR.
+
+
+license:
+  - GPL-3.0-or-later
+
+license_file: LICENSE
+
+tags:
+  - elastic
+  - elk
+  - kibana
+  - fleet
+  - security
+
+dependencies:
+  community.general: ">=12.2.0"
+
+repository: https://github.com/ZuperSero/zupersero.tailscale
+
+documentation: https://galaxy.ansible.com/ui/repo/published/zupersero/tailscale
+
+homepage: https://github.com/ZuperSero/zupersero.tailscale
+
+issues: https://github.com/ZuperSero/zupersero.tailscale/issues
+
+build_ignore: []

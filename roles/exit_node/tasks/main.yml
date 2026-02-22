@@ -1,0 +1,34 @@
+---
+- name: Check for /etc/sysctl.d
+  ansible.builtin.stat:
+    path: /etc/sysctl.d
+  register: exit_node_sysctl_d
+
+- name: Set sysctl file path
+  ansible.builtin.set_fact:
+    exit_node_sysctl_file: "{{ '/etc/sysctl.d/99-tailscale.conf' if exit_node_sysctl_d.stat.exists else '/etc/sysctl.conf' }}"
+
+- name: Enable IPv4 forwarding
+  ansible.builtin.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    sysctl_file: "{{ exit_node_sysctl_file }}"
+    reload: true
+
+- name: Enable IPv6 forwarding
+  ansible.builtin.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: "1"
+    state: present
+    sysctl_file: "{{ exit_node_sysctl_file }}"
+    reload: true
+  when: exit_node_enable_ipv6 | bool
+
+- name: Ensure NAT masquerade for exit node traffic
+  ansible.posix.iptables:
+    table: nat
+    chain: POSTROUTING
+    out_interface: "{{ exit_node_out_interface }}"
+    jump: MASQUERADE
+    state: present

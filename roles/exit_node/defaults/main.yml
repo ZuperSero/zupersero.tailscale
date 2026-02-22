@@ -1,0 +1,7 @@
+---
+# Network interface used for outbound NAT when acting as an exit node.
+# Override this per host if needed.
+exit_node_out_interface: eth0
+
+# Optional: set to false to skip IPv6 forwarding.
+exit_node_enable_ipv6: true
