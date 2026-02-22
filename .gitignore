@@ -209,11 +209,6 @@ __marimo__/
 .ansible
 .build
 inventory
-!inventory/
-!inventory/tailscale.yml
-!plugins/inventory/
-!plugins/inventory/**
-plugins/inventory/__pycache__/
 AGENTS.md
 test.yml
 tailscale-api.yaml

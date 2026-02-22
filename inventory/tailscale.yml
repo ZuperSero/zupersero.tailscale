@@ -1,8 +1,0 @@
----
-plugin: zupersero.tailscale.tailscale
-tailnet: "{{ lookup('google.cloud.gcp_secret_manager', key='TAILSCALE_TAILNET') }}"
-api_key: "{{ lookup('google.cloud.gcp_secret_manager', key='TAILSCALE_API_KEY') }}"
-fields: all
-use_tailscale_ip: true
-ip_version: auto
-include_services: true
