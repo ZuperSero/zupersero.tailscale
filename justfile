@@ -2,7 +2,7 @@ init:
     uv venv --allow-existing --python 3.11
     source .venv/bin/activate
     uv pip install \
-        ansible-core==2.19.5 \
+        ansible==12.3.0 \
         ansible-lint==26.1.1 \
         ruff==0.14.13 \
         antsibull-core==3.5.0

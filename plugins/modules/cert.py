@@ -11,11 +11,6 @@ description:
   - Generates TLS certificates for a tailnet domain via the local Tailscale daemon.
   - Uses the local CLI by default, or the local unix socket when C(tailscale_socket=true).
 options:
-  domain:
-    description:
-      - Fully-qualified tailnet domain name to request a certificate for.
-    type: str
-    required: true
   cert_file:
     description:
       - Path to write the certificate PEM.
@@ -66,22 +61,18 @@ author:
 EXAMPLES = r"""
 - name: Request certificate using the CLI
   zupersero.tailscale.cert:
-    domain: "host.tailnet.ts.net"
 
 - name: Request certificate using the local socket
   zupersero.tailscale.cert:
-    domain: "host.tailnet.ts.net"
     tailscale_socket: true
 
 - name: Write cert and key to explicit paths
   zupersero.tailscale.cert:
-    domain: "host.tailnet.ts.net"
     cert_file: "/etc/ssl/tailscale/host.crt"
     key_file: "/etc/ssl/tailscale/host.key"
 
 - name: Return cert and key in output without writing files
   zupersero.tailscale.cert:
-    domain: "host.tailnet.ts.net"
     cert_file: "-"
     key_file: "-"
 """
@@ -252,6 +243,43 @@ def _extract_from_mapping(data: dict[str, Any]) -> Tuple[Optional[str], Optional
     return None, None
 
 
+def _domain_from_status(status: dict[str, Any]) -> Optional[str]:
+    if not isinstance(status, dict):
+        return None
+
+    self_info = status.get("Self")
+    if isinstance(self_info, dict):
+        dns_name = self_info.get("DNSName")
+        if isinstance(dns_name, str) and dns_name:
+            return dns_name.rstrip(".")
+        host_name = self_info.get("HostName")
+    else:
+        host_name = None
+
+    magic_suffix = status.get("MagicDNSSuffix")
+    if isinstance(host_name, str) and host_name and isinstance(magic_suffix, str) and magic_suffix:
+        return f"{host_name}.{magic_suffix}".rstrip(".")
+
+    return None
+
+
+def _resolve_domain(module: AnsibleModule, tailscale_socket: bool) -> str:
+    try:
+        if tailscale_socket:
+            client = TailscaleSocketClient(module=module)
+            status = client.status()
+        else:
+            client = TailscaleCliClient(module=module)
+            status = client.status()
+    except TailscaleError as exc:
+        raise TailscaleError(f"Unable to determine tailnet domain: {exc}")
+
+    domain = _domain_from_status(status)
+    if not domain:
+        raise TailscaleError("Unable to determine tailnet domain from tailscale status")
+    return domain
+
+
 def _socket_cert_pair(client: TailscaleSocketClient, domain: str, min_validity: str) -> tuple[str, str]:
     params = {"type": "pair"}
     if min_validity:
@@ -303,7 +331,6 @@ def _cli_cert_pair(client: TailscaleCliClient, domain: str, min_validity: str, s
 
 def main() -> None:
     argument_spec = dict(
-        domain=dict(type="str", required=True),
         cert_file=dict(type="str"),
         key_file=dict(type="str"),
         min_validity=dict(type="str", default="0s"),
@@ -330,12 +357,16 @@ def main() -> None:
         ),
     )
 
-    domain = module.params["domain"]
     tailscale_socket = module.params["tailscale_socket"]
     cert_file = module.params.get("cert_file")
     key_file = module.params.get("key_file")
     min_validity = module.params.get("min_validity")
     serve_demo = module.params.get("serve_demo")
+
+    try:
+        domain = _resolve_domain(module, tailscale_socket)
+    except TailscaleError as exc:
+        module.fail_json(msg=str(exc))
 
     cert_file, key_file = _default_paths(domain, cert_file, key_file)
 
