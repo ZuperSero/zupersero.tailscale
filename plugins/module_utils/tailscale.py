@@ -274,5 +274,14 @@ class TailscaleClient:
     def list_services(self) -> tuple[int, dict | list | str | None]:
         return self.get(f"/tailnet/{self.tailnet}/services")
 
+    def get_service(self, service_name: str) -> tuple[int, dict | list | str | None]:
+        return self.get(f"/tailnet/{self.tailnet}/services/{service_name}")
+
+    def update_service(self, service_name: str, data: dict) -> tuple[int, dict | list | str | None]:
+        return self.put(f"/tailnet/{self.tailnet}/services/{service_name}", data=data)
+
+    def delete_service(self, service_name: str) -> tuple[int, dict | list | str | None]:
+        return self.delete(f"/tailnet/{self.tailnet}/services/{service_name}")
+
     def list_service_hosts(self, service_name: str) -> tuple[int, dict | list | str | None]:
         return self.get(f"/tailnet/{self.tailnet}/services/{service_name}/devices")
