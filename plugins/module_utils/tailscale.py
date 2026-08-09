@@ -103,9 +103,9 @@ class TailscaleClient:
         self.retry_pause = int(options.get("retry_pause") or params.get("retry_pause") or 1)
 
         if not self.api_key:
-            self._fail("Tailscale API key is required")
+            self._fail("Tailscale API key is required (set api_key or TAILSCALE_AUTH_KEY)")
         if not self.tailnet:
-            self._fail("Tailscale tailnet ID is required")
+            self._fail("Tailscale tailnet ID is required (set tailnet or TAILSCALE_TAILNET_ID)")
         if not self.url:
             self._fail("Tailscale API URL is required")
 
@@ -166,10 +166,12 @@ class TailscaleClient:
                 headers=headers,
                 method=method,
                 timeout=self.timeout,
-                validate_certs=self.validate_certs,
             )
             status_code = info.get("status", 0)
-            response_bytes = resp.read() if resp else b""
+            if resp:
+                response_bytes = resp.read()
+            else:
+                response_bytes = info.get("body") or info.get("msg") or b""
         else:
             try:
                 resp = open_url(
@@ -201,9 +203,11 @@ class TailscaleClient:
 
         if 400 <= status_code < 500:
             if isinstance(response_data, dict):
-                error_msg = response_data.get("message") or response_data.get("error") or "Client error"
+                error_msg = response_data.get("message") or response_data.get("error")
             else:
-                error_msg = str(response_data) if response_data is not None else "Client error"
+                error_msg = str(response_data) if response_data is not None else None
+            if not error_msg or error_msg == "Client error":
+                error_msg = f"{error_msg or 'Client error'} (HTTP {status_code} during {method} {path})"
             return status_code, {"error": error_msg, "status": status_code}
 
         error_msg = f"HTTP {status_code}: Server error"

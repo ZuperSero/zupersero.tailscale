@@ -71,6 +71,14 @@ class ServeModuleTest(unittest.TestCase):
             ["serve", "--https=443", "--yes", "off"],
         )
 
+    def test_serve_args_for_disable_service_tcp_endpoint(self) -> None:
+        module = FakeModule(module_params(target=None, state="absent", service="svc:radarr", protocol="tcp", port=7878))
+
+        self.assertEqual(
+            serve._serve_args(module, disable=True),
+            ["serve", "--tcp=7878", "--yes", "--service=svc:radarr", "off"],
+        )
+
     def test_status_match_for_node_https_proxy(self) -> None:
         module = FakeModule(module_params())
         status = {
@@ -96,6 +104,28 @@ class ServeModuleTest(unittest.TestCase):
                         "web.tailnet.ts.net:443": {
                             "Handlers": {
                                 "/": {"Proxy": "http://127.0.0.1:8080"},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+
+        self.assertTrue(serve._is_configured(status, module))
+
+    def test_status_match_for_service_tcp_forward(self) -> None:
+        module = FakeModule(module_params(service="svc:radarr", protocol="tcp", port=7878, target=None))
+        status = {
+            "Services": {
+                "svc:radarr": {
+                    "TCP": {
+                        "443": {"HTTPS": True},
+                        "7878": {"TCPForward": "127.0.0.1:7878"},
+                    },
+                    "Web": {
+                        "radarr.tailnet.ts.net:443": {
+                            "Handlers": {
+                                "/": {"Proxy": "http://127.0.0.1:7878"},
                             },
                         },
                     },

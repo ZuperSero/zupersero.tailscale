@@ -26,6 +26,7 @@ options:
   ports:
     description:
       - Ports exposed by the service.
+      - Values are sent to Tailscale as TCP service ports, for example C(443) becomes C(tcp:443).
       - Required when C(state=present).
     type: list
     elements: int
@@ -33,14 +34,14 @@ options:
     description:
       - Tags associated with the service.
       - Tags must be prefixed with C(tag:).
+      - If omitted, existing tags are preserved when updating an existing service.
     type: list
     elements: str
-    default: []
   comment:
     description:
       - Optional comment for the service.
+      - If omitted, the existing comment is preserved when updating an existing service.
     type: str
-    default: ""
   url:
     description:
       - Base URL for the Tailscale API.
@@ -76,7 +77,7 @@ options:
   retry_pause:
     description:
       - Base delay in seconds between retry attempts.
-    type: int
+    type: float
     default: 1
   client_cert:
     description:
@@ -138,7 +139,7 @@ previous_service:
   returned: when available
 """
 
-from typing import Any  # noqa: E402
+from typing import Any, Optional, Union  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
 
@@ -157,7 +158,10 @@ def _validate_service_name(module: AnsibleModule, name: str) -> None:
         module.fail_json(msg="name must be a Tailscale service name prefixed with 'svc:'")
 
 
-def _validate_ports(module: AnsibleModule, ports: list[int] | None, state: str) -> list[int]:
+ResponseData = Union[dict, list, str, None]
+
+
+def _validate_ports(module: AnsibleModule, ports: Optional[list[int]], state: str) -> list[int]:
     if state == "present" and not ports:
         module.fail_json(msg="ports is required when state=present")
     if not ports:
@@ -171,41 +175,80 @@ def _validate_ports(module: AnsibleModule, ports: list[int] | None, state: str) 
     return normalized
 
 
-def _validate_tags(module: AnsibleModule, tags: list[str]) -> list[str]:
+def _validate_tags(module: AnsibleModule, tags: Optional[list[str]]) -> Optional[list[str]]:
+    if tags is None:
+        return None
     for tag in tags:
         if not tag.startswith("tag:") or tag == "tag:":
             module.fail_json(msg="tags entries must be prefixed with 'tag:'")
     return tags
 
 
-def _service_payload(name: str, ports: list[int], tags: list[str], comment: str) -> dict[str, Any]:
-    return {
+def _normalize_ports(ports: Any) -> list[str]:
+    if not ports:
+        return []
+    normalized = []
+    for port in ports:
+        value = str(port)
+        if value.isdigit():
+            value = f"tcp:{value}"
+        normalized.append(value)
+    return sorted(normalized)
+
+
+def _service_payload(
+    name: str,
+    ports: list[int],
+    tags: Optional[list[str]],
+    comment: Optional[str],
+    current: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    payload = {
         "name": name,
-        "ports": ports,
-        "tags": tags,
-        "comment": comment,
+        "ports": _normalize_ports(ports),
     }
+    if current and current.get("addrs"):
+        payload["addrs"] = current["addrs"]
+    if tags is not None:
+        payload["tags"] = tags
+    elif current and "tags" in current:
+        payload["tags"] = current.get("tags") or []
+    if comment is not None:
+        payload["comment"] = comment
+    elif current and "comment" in current:
+        payload["comment"] = current.get("comment") or ""
+    return payload
 
 
 def _normalize_service(service: dict[str, Any]) -> dict[str, Any]:
-    return {
+    normalized = {
         "name": service.get("name"),
-        "ports": sorted(service.get("ports") or []),
-        "tags": sorted(service.get("tags") or []),
-        "comment": service.get("comment") or "",
+        "ports": _normalize_ports(service.get("ports")),
     }
+    if "tags" in service:
+        normalized["tags"] = sorted(service.get("tags") or [])
+    if "comment" in service:
+        normalized["comment"] = service.get("comment") or ""
+    return normalized
 
 
 def _service_matches(current: dict[str, Any], desired: dict[str, Any]) -> bool:
-    return _normalize_service(current) == {
+    normalized_current = _normalize_service(current)
+    normalized_desired = {
         "name": desired["name"],
-        "ports": sorted(desired["ports"]),
-        "tags": sorted(desired["tags"]),
-        "comment": desired["comment"],
+        "ports": _normalize_ports(desired["ports"]),
     }
+    if "tags" in desired:
+        normalized_desired["tags"] = sorted(desired["tags"])
+    if "comment" in desired:
+        normalized_desired["comment"] = desired["comment"]
+    for key, value in normalized_desired.items():
+        if normalized_current.get(key) != value:
+            return False
+    return True
 
 
-def _api_error(data: dict | list | str | None, default: str) -> str:
+def _api_error(data: ResponseData, default: str) -> str:
     if isinstance(data, dict):
         return str(data.get("error") or data.get("message") or default)
     if data is not None:
@@ -213,7 +256,7 @@ def _api_error(data: dict | list | str | None, default: str) -> str:
     return default
 
 
-def _get_current_service(module: AnsibleModule, client: TailscaleClient, name: str) -> dict[str, Any] | None:
+def _get_current_service(module: AnsibleModule, client: TailscaleClient, name: str) -> Optional[dict[str, Any]]:
     status, data = client.get_service(name)
     if status == 404:
         return None
@@ -224,7 +267,12 @@ def _get_current_service(module: AnsibleModule, client: TailscaleClient, name: s
     return data
 
 
-def _update_service(module: AnsibleModule, client: TailscaleClient, name: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+def _update_service(
+    module: AnsibleModule,
+    client: TailscaleClient,
+    name: str,
+    payload: dict[str, Any],
+) -> Optional[dict[str, Any]]:
     status, data = client.update_service(name, payload)
     if status >= 400:
         module.fail_json(msg=_api_error(data, "Tailscale API returned an error while updating the service"))
@@ -247,8 +295,8 @@ def main() -> None:
         name=dict(type="str", required=True),
         state=dict(type="str", choices=["present", "absent"], default="present"),
         ports=dict(type="list", elements="int"),
-        tags=dict(type="list", elements="str", default=[]),
-        comment=dict(type="str", default=""),
+        tags=dict(type="list", elements="str"),
+        comment=dict(type="str"),
     )
 
     module = AnsibleModule(
@@ -263,7 +311,7 @@ def main() -> None:
     state = module.params["state"]
     ports = _validate_ports(module, module.params.get("ports"), state)
     tags = _validate_tags(module, module.params["tags"])
-    comment = module.params["comment"]
+    comment = module.params.get("comment")
 
     _validate_service_name(module, name)
 
@@ -290,7 +338,7 @@ def main() -> None:
             module.fail_json(msg=str(exc))
         module.exit_json(**result)
 
-    desired = _service_payload(name, ports, tags, comment)
+    desired = _service_payload(name, ports, tags, comment, current=current)
     if current is not None and _service_matches(current, desired):
         result["service"] = current
         module.exit_json(**result)

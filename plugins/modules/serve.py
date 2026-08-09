@@ -108,7 +108,7 @@ status:
   returned: when available
 """
 
-from typing import Any  # noqa: E402
+from typing import Any, Optional  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
 
@@ -132,7 +132,7 @@ PROTOCOL_FLAGS = {
 PROTOCOL_KEYS = {
     "https": "HTTPS",
     "http": "HTTP",
-    "tcp": "TCP",
+    "tcp": "TCPForward",
     "tls_terminated_tcp": "TLS",
 }
 
@@ -184,10 +184,10 @@ def _serve_args(module: AnsibleModule, disable: bool = False) -> list[str]:
         args.append(f"--proxy-protocol={proxy_protocol}")
     if tun:
         args.append("--tun")
-    if target:
-        args.append(target)
     if disable:
         args.append("off")
+    elif target:
+        args.append(target)
     return args
 
 
@@ -198,7 +198,7 @@ def _status(client: TailscaleCliClient) -> dict[str, Any]:
     return data
 
 
-def _service_status(status: dict[str, Any], service: str | None) -> dict[str, Any]:
+def _service_status(status: dict[str, Any], service: Optional[str]) -> dict[str, Any]:
     if service:
         services = status.get("Services")
         if isinstance(services, dict):
@@ -209,7 +209,7 @@ def _service_status(status: dict[str, Any], service: str | None) -> dict[str, An
     return status
 
 
-def _target_candidates(target: str | None) -> set[str]:
+def _target_candidates(target: Optional[str]) -> set[str]:
     if not target:
         return set()
     candidates = {target}

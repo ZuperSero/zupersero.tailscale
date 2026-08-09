@@ -17,7 +17,7 @@ class ServiceModuleTest(unittest.TestCase):
     def test_service_matches_ignores_ports_and_tags_order(self) -> None:
         current = {
             "name": "svc:web",
-            "ports": [443, 80],
+            "ports": ["tcp:443", "tcp:80"],
             "tags": ["tag:prod", "tag:web"],
             "comment": "Production web",
             "addrs": ["100.64.0.1"],
@@ -27,6 +27,39 @@ class ServiceModuleTest(unittest.TestCase):
             "ports": [80, 443],
             "tags": ["tag:web", "tag:prod"],
             "comment": "Production web",
+        }
+
+        self.assertTrue(service._service_matches(current, desired))
+
+    def test_service_payload_uses_tailscale_port_format(self) -> None:
+        self.assertEqual(
+            service._service_payload("svc:web", [443], [], ""),
+            {
+                "name": "svc:web",
+                "ports": ["tcp:443"],
+                "tags": [],
+                "comment": "",
+            },
+        )
+
+    def test_service_payload_preserves_existing_addrs_for_update(self) -> None:
+        self.assertEqual(
+            service._service_payload("svc:web", [443], None, None, current={"addrs": ["100.64.0.1"]}),
+            {
+                "name": "svc:web",
+                "ports": ["tcp:443"],
+                "addrs": ["100.64.0.1"],
+            },
+        )
+
+    def test_service_matches_ignores_unmanaged_optional_fields(self) -> None:
+        current = {
+            "name": "svc:web",
+            "ports": ["tcp:443"],
+        }
+        desired = {
+            "name": "svc:web",
+            "ports": ["tcp:443"],
         }
 
         self.assertTrue(service._service_matches(current, desired))
